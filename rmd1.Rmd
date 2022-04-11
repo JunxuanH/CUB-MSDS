@@ -1,0 +1,101 @@
+---
+title: "rmd1"
+output:
+  html_document: default
+  pdf_document: default
+date: '2022-03-23'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## NYC Shooting Incident Report Analysis
+
+**The two questions of interest that I wanted to learn more about were:**
+
+**1. Has the number of incidents decreased year over year?**
+
+**2. Which borough has the most/least number of incidents over this period of time?**
+
+**Installing Packages and Reading in the Data:**
+```{r get_nypd_data}
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(lubridate)
+library(tibble)
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nypd <- read_csv(url_in)
+```
+
+**Filter only the columns we want to look at:**
+```{r filter}
+nypdsmall <- nypd %>%
+  select(c(OCCUR_DATE, OCCUR_TIME, BORO, LOCATION_DESC, STATISTICAL_MURDER_FLAG, PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE))
+```
+
+**Get Total Number of Incidents by Borough:**
+```{r borough}
+total_occ_count <- nypdsmall %>%
+  count(BORO)
+colnames(total_occ_count)[2] <- 'Incidents'
+colnames(total_occ_count)[1] <- 'Borough'
+```
+
+**Get Total Number of Incidents by Year:**
+```{r year}
+dt_count <- nypdsmall %>%
+  count(OCCUR_DATE)
+dt_count$OCCUR_DATE <- mdy(dt_count$OCCUR_DATE)
+dt_count <- dplyr::arrange(dt_count, OCCUR_DATE)
+colnames(dt_count)[2] <- 'Number of Incidents'
+colnames(dt_count)[1] <- 'Date'
+dt_count$Year <- as.numeric(format(dt_count$Date, "%Y"))
+dt_count2 <- aggregate(dt_count$'Number of Incidents', by=list(Year=dt_count$Year), FUN=sum)
+colnames(dt_count2)[2] <- 'Number of Incidents'
+```
+
+```{r graph1}
+dt_count2 %>%
+  ggplot(aes(x = Year, y = `Number of Incidents` )) + 
+  geom_line(aes(color = "Number of Incidents")) +
+  geom_point(aes(color = "Number of Incidents")) +
+  theme(legend.position = "bottom") +
+  labs(title = "Number of Incidents by Year in NYC", y = NULL)
+```
+
+**Analysis of Number of Incidents by Year in NYC:** From this incident data aggregated by year, we can see that the number of incidents have been mostly decreasing year over year from 2006. However, there was a large spike of incidents towards the end of 2019 and beginning of 2020. 
+
+**Conclusion:** I had initially thought that the number of incidents would go down each year until the present. However, this was not the case since there seemed to be a spike in incidents in 2020. I am curious to know if the pandemic had any affect on this spike.
+
+```{r graph2}
+occ_graph <- ggplot(data = total_occ_count, aes(x=Borough, y=Incidents, fill=Borough)) + geom_bar(stat="identity") + labs(title="Number of Incidents by Borough")
+occ_graph
+
+```
+
+**Analysis of Number of Incidents by Borough:** Based on the data from 2006 to 2020, it looks like Staten Island has the least number of incidents while Brooklyn has the most. For Staten Island, this makes sense because it has a relatively low population. However, Brooklyn has the highest number of incidents versus the other boroughs even though it has a relatively lower population than Manhattan. 
+
+**Conclusion:** My initial assumption that Manhattan would have higher incidents than the other boroughs. After seeing this data, I am more curious to learn why this is not the case. Perhaps there are other variables that we need to look that outside of the provided dataset
+
+**Model between number of Incidents and number of murders in different boroughs:**
+```{r borough2}
+total_mcount <- nypdsmall %>%
+  count(BORO, STATISTICAL_MURDER_FLAG)
+colnames(total_mcount)[3] <- 'Murder_Incidents'
+colnames(total_mcount)[1] <- 'Borough:'
+total_mcount2 <- total_mcount[total_mcount$STATISTICAL_MURDER_FLAG == 'TRUE', ]
+
+total_mcount3 <- cbind(total_mcount2, total_occ_count[c("Incidents")])
+
+mod <- lm(Murder_Incidents ~ Incidents, data = total_mcount3)
+summary(mod)
+tm4 <- total_mcount3 %>% mutate(pred = predict(mod))
+tm4 %>% ggplot() + geom_point(aes(x = Incidents, y = Murder_Incidents), color = "blue") +
+  geom_point(aes(x = Incidents, y = pred), color = "red")
+
+```
+
+Analysis of model (Bias and Conclusion):  My initial assumptions going into this model were correct. It makes sense that a higher number of shooting incidents will cause higher deaths. The model does a good job at predicting the number of murders based on total number of incidents. 
+
